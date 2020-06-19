@@ -1,0 +1,89 @@
+取代star table內 
+當存在platform=NULL時
+將NULL全數替換為PC
+
+update star.accounts 
+set  platform = 'PC'
+where platform is NULL;
+
+----------------------
+master slave架設
+
+Master
+Slave
+
+
+#1.要架設主從架構時 首先master那台DB必須先開啟binlog
+###(/etc/my.cnf or /etc/my.cnf.d/server.cnf 裡面的mysqld下 新增下列文字後重啟 如位置有重複檔案請自行更換位置)
+記得看下server-id master 與 slave DB 的 id 不可以重複
+```
+log-bin= /var/log/mysql/mysql-bin
+log_error= /var/log/mysql/mariadb.err
+binlog_format=mixed
+max-binlog-size=100M
+slow_query_log  = 1
+long_query_time = 2
+expire_logs_days = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+```
+
+=======================================
+#2.確認有開啟binlog後 進入master DB 後 執行
+```
+show master status \G
+```
+
+會出現類似以下文字 :
+
+```
+*************************** 1. row ******************
+File: mysql-bin.005852
+Position: 65235158
+Binlog_Do_DB:\nBinlog_Ignore_DB:
+1 row in set (0.012 sec)
+```
+###請記下 `File` 與 `Postition` 之後會需要輸入
+
+=====================================
+#3.master DB內執行下列指令 :
+###(其中的ip與password請替換成slave DB ip與自己好記的密碼)
+```
+CREATE USER 'replication'@'ip' IDENTIFIED BY 'password';
+GRANT REPLICATION SLAVE ON *.* TO 'replication'@'ip';
+FLUSH PRIVILEGES;
+```
+
+=====================================
+#4.複製master內容至slave上(dump or 建快照還原)
+
+=====================================
+#5.登入slave DB後 執行下列命令 :
+###除了USER 其餘請換成自己需要的參數 下面兩項為第二步驟時記下的數字
+
+```
+CHANGE MASTER TO
+
+MASTER_HOST='ip_here',
+
+MASTER_USER='replication',
+
+MASTER_PASSWORD='password_here',
+
+MASTER_LOG_FILE='mysql-bin.005852',
+
+MASTER_LOG_POS=65235158;
+```
+
+=====================================
+#6.於slave DB內執行
+```
+stop slave;
+SET GLOBAL sql_slave_skip_counter = 1;
+start slave;
+show slave status \G
+```
+直到沒有出現error 與 second behind master = 0 才算完成
+
+###如果出現1062錯誤 至/etc/my.cnf內的mysqld新增
+`slave-skip-errors=1062`
+
